@@ -1,37 +1,52 @@
-const express = require('express');
-const router = express.Router();
-const connectToDatabase = require('../models/db');
+/*jshint esversion: 8 */
 require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const pinoLogger = require('./logger');
+const path = require('path');
 
-// Search for gifts
-router.get('/', async (req, res, next) => {
-    try {
-        const db = await connectToDatabase();
-        const collection = db.collection(process.env.MONGO_COLLECTION);
-        // Initialize the query object
-        let query = {};
+const connectToDatabase = require('./models/db');
+const {loadData} = require("./util/import-mongo/index");
 
-        // Add the name filter to the query if the name parameter is not empty
-        if (req.query.name && req.query.name.trim() !== '') {
-            query.name = { $regex: req.query.name, $options: "i" }; // Using regex for partial match, case-insensitive
-        }
 
-        // Add other filters to the query
-        if (req.query.category) {
-            query.category = req.query.category;
-        }
-        if (req.query.condition) {
-            query.condition = req.query.condition;
-        }
-        if (req.query.age_years) {
-            query.age_years = { $lte: parseInt(req.query.age_years) };
-        }
+const app = express();
+app.use("*",cors());
+const port = 3060;
 
-        const gifts = await collection.find(query).toArray();
-        res.json(gifts);
-    } catch (e) {
-        next(e);
-    }
+// Connect to MongoDB; we just do this one time
+connectToDatabase().then(() => {
+    pinoLogger.info('Connected to DB');
+})
+    .catch((e) => console.error('Failed to connect to DB', e));
+
+
+app.use(express.json());
+
+// Route files
+const secondChanceRoutes = require('./routes/secondChanceItemsRoutes');
+const authRoutes = require('./routes/authRoutes');
+const searchRoutes = require('./routes/searchRoutes');
+const pinoHttp = require('pino-http');
+const logger = require('./logger');
+
+app.use(pinoHttp({ logger }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Use Routes
+app.use('/api/secondchance/items', secondChanceRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/secondchance/search', searchRoutes);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).send('Internal Server Error');
 });
 
-module.exports = router;
+app.get("/",(req,res)=>{
+    res.send("Inside the server")
+})
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
